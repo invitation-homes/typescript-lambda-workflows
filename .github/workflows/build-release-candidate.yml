@@ -1,0 +1,118 @@
+name: Build release candidate
+
+on:
+  workflow_call
+
+jobs:
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Read version from package.json
+      id: read-version
+      run: echo "::set-output name=version::$(jq -r '.version' package.json)"
+
+    - name: Generate short SHA
+      id: generate-short-sha
+      run: echo "::set-output name=sha::$(echo ${{ github.sha }} | cut -c1-7)"
+
+    - name: Generate version
+      id: generate-version
+      run: >
+        echo "::set-output name=version::$(
+        echo ${{ steps.read-version.outputs.version }}-${{ github.run_number }}-${{ steps.generate-short-sha.outputs.sha }})"
+
+    - name: Create GitHub release
+      id: create-release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: "${{ steps.generate-version.outputs.version }}"
+        release_name: "${{ steps.generate-version.outputs.version }}"
+        draft: true
+        prerelease: true
+
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+      version: ${{ steps.generate-version.outputs.version }}
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
+
+  generate-function-list:
+    name: Generate list of Lambda functions
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    # This generates a list of functions to be used in the matrix of the next job. This lists
+    # the directories under ./src/functions and transforms it into a JSON array.
+    - name: Generate function list
+      id: generate-function-list
+      run: >
+        echo "::set-output name=functions::
+        $(ls -1p | grep / | xargs echo | sed 's/\/ /","/g' | sed 's/.$/"\]/' | sed 's/^/\["/')"
+      working-directory: src/functions
+
+    outputs:
+      functions: ${{ steps.generate-function-list.outputs.functions }}
+
+  attach-lambda-function-archive:
+    name: Attach Lambda function archive to release
+    runs-on: ubuntu-latest
+    needs: [create-github-release, generate-function-list]
+    strategy:
+      matrix:
+        function: ${{ fromJson(needs.generate-function-list.outputs.functions) }}
+    env:
+      ZIP_FILE_NAME: ${{matrix.function}}-${{needs.create-github-release.outputs.version}}.zip
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Install Node.js v16
+      uses: actions/setup-node@v2
+      with:
+        node-version: "16"
+
+    - name: Install dependencies
+      run: yarn
+
+    - name: Build Lambda function
+      run: >
+        yarn esbuild --bundle --outfile=dist/${{ matrix.function }}.js --platform=node --external:pg-native 
+        ./src/functions/${{ matrix.function }}
+
+    - name: Build Lambda function zip file
+      run: zip -r -q ${{ env.ZIP_FILE_NAME}} ${{ matrix.function }}.js
+      working-directory: dist
+
+    - name: Upload Lambda function asset to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-github-release.outputs.upload_url }}
+        asset_path: dist/${{ env.ZIP_FILE_NAME }}
+        asset_name: ${{ env.ZIP_FILE_NAME }}
+        asset_content_type: application/zip
+
+  publish-github-release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: [create-github-release, attach-lambda-function-archive]
+    steps:
+
+    - name: Update release
+      run: >
+        curl -v -L -f
+        -X PATCH -H "Accept: application/vnd.github+json"
+        -H "Authorization: Bearer ${{ secrets.GH_REPO_ACCESS_TOKEN }}"
+        https://api.github.com/repos/${{ github.repository }}/releases/${{ needs.create-github-release.outputs.release_id }}
+        -d '{"draft":false}'

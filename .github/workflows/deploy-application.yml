@@ -1,0 +1,182 @@
+name: Deploy application
+
+on: 
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        description: 'AWS environment'
+        type: string
+      tag:
+        required: true
+        description: 'The tag of the release to be deployed'
+        type: string
+
+env:
+  BASE_API_URL: https://api.github.com/repos/${{ github.repository }}/releases
+
+jobs:
+
+  generate-function-list:
+    name: Generate list of Lambda functions
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.tag }}
+
+    # This generates a list of functions to be used in the matrix of the next job. This lists
+    # the directories under src/functions and transforms it into a JSON array.
+    - name: Generate function list
+      id: generate-function-list
+      run: >
+        echo "::set-output name=functions::
+        $(ls -1p | grep / | xargs echo | sed 's/\/ /","/g' | sed 's/.$/"\]/' | sed 's/^/\["/')"
+      working-directory: src/functions
+
+    outputs:
+      functions: ${{ steps.generate-function-list.outputs.functions }}
+
+  get-release-details:
+    name: Get release details
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Get release
+      run: >
+        curl --fail -s
+        -H 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}'
+        -H 'content-type: application/json'
+        ${{ env.BASE_API_URL }}/tags/${{ inputs.tag }}
+        > release.json
+
+    - name: Upload release details as artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: release.json
+        path: release.json
+
+  upload-lambda-function:
+    name: Upload Lambda function to S3
+    runs-on: ubuntu-latest
+    needs: [generate-function-list, get-release-details]
+    strategy:
+      matrix:
+        function: ${{ fromJson(needs.generate-function-list.outputs.functions) }}
+    env:
+      ARTIFACT_NAME: ${{ matrix.function }}-${{ inputs.tag }}.zip
+      S3_BUCKET: lambda-functions-${{ inputs.environment }}-invh
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.tag }}
+
+    - name: Look up AWS account id
+      id: look-up-aws-account-id
+      run: >
+        echo "::set-output name=account-id::$(
+        if [ "dev" = "${{ inputs.environment }}" ]; then echo 958500205200;
+        elif [ "qa" = "${{ inputs.environment }}" ]; then echo 926951257172;
+        elif [ "uat" = "${{ inputs.environment }}" ]; then echo 889648276447;
+        elif [ "prod" = "${{ inputs.environment }}" ]; then echo 772161852393;
+        else echo "Invalid environment: ${{ inputs.environment }}" && exit 1; fi)"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.DEPLOYER_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.DEPLOYER_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        role-to-assume: arn:aws:iam::${{ steps.look-up-aws-account-id.outputs.account-id }}:role/github-actions-deployer
+        role-skip-session-tagging: true
+        role-duration-seconds: 1200
+
+    - name: Download release details artifact
+      uses: actions/download-artifact@v2
+      with:
+        name: release.json
+
+    - name: Find asset id
+      id: find-asset-id
+      run: >
+        echo "::set-output name=asset_id::$(jq '.assets[] | select(.name == "${{ env.ARTIFACT_NAME }}") | .id' release.json)"
+
+    - name: Download release asset
+      run: >
+        curl --fail -s -L
+        -H 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}'
+        -H "accept: application/octet-stream"
+        ${{ env.BASE_API_URL }}/assets/${{ steps.find-asset-id.outputs.asset_id}}
+        -o ${{ env.ARTIFACT_NAME }}
+
+    - name: Upload lambda functions to S3
+      run: >
+        aws s3 cp ${{ env.ARTIFACT_NAME }}
+        s3://${{ env.S3_BUCKET }}/CustomerService/${{ matrix.function }}/${{ env.ARTIFACT_NAME }}
+
+  apply-terraform-changes:
+    name: Apply Terraform changes
+    runs-on: ubuntu-latest
+    needs: upload-lambda-function
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.tag }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+        terraform_version: ~1.2.0
+
+    - name: Configure Terraform environment
+      run: mkdir .terraform && echo "${{ inputs.environment }}-us-east-1-aws" > .terraform/environment
+      working-directory: terraform/application
+
+    - name: Initialize Terraform
+      run: terraform init
+      working-directory: terraform/application
+
+    - name: Run Terraform apply
+      run: terraform apply -auto-approve
+      working-directory: terraform/application
+
+  publish_deployment_details:
+    name: Publish deployment details
+    runs-on: ubuntu-latest
+    needs: [apply-terraform-changes, get-release-details]
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.tag }}
+
+    - name: Get commit SHA for release
+      id: get-commit-sha
+      run: echo "::set-output name=commit::$(git rev-parse --short HEAD)"
+
+    - name: Get current timestamp
+      id: get-timestamp
+      run: echo "::set-output name=timestamp::$(date +'%Y-%m-%dT%H:%M:%SZ')"
+
+    - name: Get repository name
+      id: get-repo-name
+      run: echo "::set-output name=name::$(echo ${{ github.repository }}) | cut -d'/' -f2"
+
+    - name: Post to deployment CI/CD API
+      run: >
+        curl https://ci-cd-api.invitationhomes.com/v1/deployments
+        -H 'Authorization: Bearer ${{ secrets.CI_CD_API_TOKEN }}'
+        -d '{"version": "${{ inputs.tag }}", 
+        "commit": "${{ steps.get-commit-sha.outputs.commit }}", 
+        "repository": "${{ steps.get-repo-name.outputs.name }}", 
+        "environment": "${{ needs.configure-environment.outputs.environment }}", 
+        "isSuccessful": "true", 
+        "timestamp": "${{ steps.get-timestamp.outputs.timestamp }}"}'
