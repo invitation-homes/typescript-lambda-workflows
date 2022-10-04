@@ -1,57 +1,62 @@
-<!--
-The name of the project. Can also be a logo or ASCII Art Header (this [site](http://patorjk.com/software/taag/#p=display&f=Slant&t=Pro%20WebApp) can generate nice ASCII art)	
--->	
-# Project Name
 
-<!---
-Some prose that describes the project, in as much detail as necessary to ensure the reader walks away with a basic understanding of the purpose of this repository. Diagrams included here can be useful to help the reader understand how the system is architectured. Links to other relevant documentation might also be useful.
--->
-Clear description of what the project does. 
+# TypeScript Lambda Workflows
 
-<!-- 
-A description of how the code included in the project runs in various environments, including the URLs if that's appropriate
--->
-## Where Does This Run
+Shared GitHub workflows for TypeScript Lambda function applications. There are two workflows in this repository:
 
-<!--
-Step-by-step instructions on how to install the code and any necessary dependencies
--->	
-## How to Use
+* [Build Release Candidate](#Build-Release-Candidate-Workflow)
+* [Deploy Application](#Deploy-Applicaiton-Workflow)
 
-<!--
-Make liberal use of code blocks in the "How to Use" section, so it's easy to cut-and-paste the relevant commands into a terminal
+## Build Release Candidate Workflow
 
-Example (Node):
+This workflow builds a release candidate for an application using the following steps:
 
-```bash
-# Clone the repository
-git clone git@github.com:invitation-homes/my-cool-repo.git
+1. **Generate tag** - Generate a unique tag for the release candidate in the form `{semver}-{build_number}-{short_sha}`, such as `1.2.0-123-abcd123`.
+    * `semver` is the application's sematic version that is extracted from the `version` property in the application's `package.json` file.
+    * `build_number` is the build number for the GitHub workflow.
+    * `short_sha` is the first seven characters of the commit SHA.
+1. **Draft a release** - Create a [GitHub release](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) in draft status using the generated tag.
+1. **Optimize function code** - For each Lambda function in the application, bundle the function code and its dependencies into a single file using [esbuild](https://esbuild.github.io/). This process only includes external dependencies that are statically referenced in the Lambda function's code. This optimizes the size of the function's code and reduces cold start times.
+1. **Attach Lambda function archives to release** - Take the bundled code, archive this into a zip file, and attach that file to the draft GitHub release.
+1. **Publish release** - Update the status of the release from draft to published. This event can be used to trigger downstream workflows, such as automatically deploying this new release candidate to the Dev environment.
 
-# Install dependencies
-npm install
+> **Note**
+> This workflow assumes that the `package.json` file is at the root of the repository and that every Lambda function is in a directory under `./src/functions`.
 
-# Run the application
-npm start
+To use this workflow, add the following to your workflow file:
+
+```yaml
+jobs:
+  build-release-candidate:
+    name: Build release candidate
+    uses: invitation-homes/typescript-lambda-workflows/.github/workflows/build-release-candidate.yml@v1
+    secrets: inherit
 ```
 
--->	
-```bash
-# Clone the repository
-git clone git@github.com:invitation-homes/my-cool-repo.git
+## Deploy Application Workflow
 
-# Install dependencies
-# <how_to_install_dependencies>
+This workflow deploys a GitHub release built by the previous workflow to AWS using the following steps:
 
-# Run the application
-# <how_to_start_the_application>
+1. **Download release artifacts** - Download the release and its assets for the given tag.
+1. **Upload artifacts to S3** - Upload each zip file asset to the corresponding Lambda function S3 bucket.
+1. **Apply Terraform changes** - Apply the Terraform changes for the application.
+1. **Post deployment details** - When the deployment successfully completes, post the details of the deployment to our CI/CD API so that the deployment will be reflected in our [CI/CD Dashboard])(https://ci-cd-dashboard-prod.herokuapp.com/).
+
+> **Note**
+> This workflow assumes that every Lambda function is in a directory under `./src/functions` and the Terraform configuration for the application is under `./terraform/application`.
+
+To use this workflow, add the following to your workflow file:
+
+```yaml
+jobs:
+  deploy-application:
+    name: Deploy applications
+    uses: invitation-homes/typescript-lambda-workflows/.github/workflows/deploy-application.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ THE DEPLOYMENT ENVIRONMENT GOES HERE }}
+      tag: ${{ THE TAG TO BE DEPLOYED GOES HERE }}
 ```
 
-<!-- 
-Instructions on how to run locally -- necessary configuration files, secret configuration, etc. As a developer, this section combined with the previous section should give me all of the necessary information to check out and run the project locally	
--->	
-### Local Development
-
-<!-- 
-How is the code built and deployed? Where does the project run? What linting and security checks are in place? Where can you view test results & static code analysis?
--->	
-## CI/CD & Deployment
+This workflow requires two input variables:
+* `environment` - The environment the application should be deployed to. This must be `dev`, `qa`, `uat`, or `prod`.
+* `tag` - The tag corresponds to the GitHub release that is to be deployed.
