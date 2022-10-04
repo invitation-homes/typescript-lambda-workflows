@@ -1,7 +1,13 @@
 name: Build release candidate
 
 on:
-  workflow_call
+  workflow_call:
+    inputs:
+      esbuild-external:
+        type: string
+        description: Any external libraries that should be considered by esbuild
+        required: false
+        default: ""
 
 jobs:
   create-github-release:
@@ -86,8 +92,8 @@ jobs:
 
     - name: Build Lambda function
       run: >
-        yarn esbuild --bundle --outfile=dist/${{ matrix.function }}.js --platform=node --external:pg-native 
-        ./src/functions/${{ matrix.function }}
+        yarn esbuild --bundle --outfile=dist/${{ matrix.function }}.js --platform=node 
+        "--external:${{ inputs.esbuild-external }}" ./src/functions/${{ matrix.function }}
 
     - name: Build Lambda function zip file
       run: zip -r -q ${{ env.ZIP_FILE_NAME}} ${{ matrix.function }}.js
