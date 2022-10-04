@@ -32,6 +32,17 @@ jobs:
     secrets: inherit
 ```
 
+This workflow accepts an optional `esbuild-external` input variable. This is passed to the esbuild process as the value for the `external` CLI option. See the [esbuild documentation](https://esbuild.github.io/api/#external) for more details.
+
+```yaml
+jobs:
+  build-release-candidate:
+    name: Build release candidate
+    uses: invitation-homes/typescript-lambda-workflows/.github/workflows/build-release-candidate.yml@v1
+    with:
+      esbuild-external: pg-native
+```
+
 ## Deploy Application Workflow
 
 This workflow deploys a GitHub release built by the previous workflow to AWS using the following steps:
