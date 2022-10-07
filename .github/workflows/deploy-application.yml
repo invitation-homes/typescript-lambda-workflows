@@ -129,6 +129,11 @@ jobs:
       with:
         ref: ${{ inputs.tag }}
 
+    - name: Update version in package.json with tag
+      run: >
+        jq -r '.version = "${{ inputs.tag }}"' package.json > package-tag-version.json
+        && mv package-tag-version.json package.json
+
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
