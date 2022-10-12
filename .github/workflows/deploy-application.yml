@@ -182,6 +182,6 @@ jobs:
         -d '{"version": "${{ inputs.tag }}", 
         "commit": "${{ steps.get-commit-sha.outputs.commit }}", 
         "repository": "${{ steps.get-repo-name.outputs.name }}", 
-        "environment": "${{ needs.configure-environment.outputs.environment }}", 
+        "environment": "${{ inputs.environment }}", 
         "isSuccessful": "true", 
         "timestamp": "${{ steps.get-timestamp.outputs.timestamp }}"}'
