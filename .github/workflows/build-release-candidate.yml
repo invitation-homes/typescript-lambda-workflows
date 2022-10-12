@@ -51,8 +51,6 @@ jobs:
   generate-function-list:
     name: Generate list of Lambda functions
     runs-on: ubuntu-latest
-    env:
-      NPM_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
     steps:
 
     - name: Checkout code
@@ -78,6 +76,7 @@ jobs:
       matrix:
         function: ${{ fromJson(needs.generate-function-list.outputs.functions) }}
     env:
+      NPM_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
       ZIP_FILE_NAME: ${{matrix.function}}-${{needs.create-github-release.outputs.version}}.zip
     steps:
 
