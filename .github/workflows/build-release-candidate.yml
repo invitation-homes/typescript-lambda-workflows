@@ -89,6 +89,8 @@ jobs:
 
     - name: Install dependencies
       run: yarn
+      env:
+        NPM_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
 
     - name: Build Lambda function
       run: >
@@ -98,6 +100,8 @@ jobs:
     - name: Build Lambda function zip file
       run: zip -r -q ${{ env.ZIP_FILE_NAME}} ${{ matrix.function }}.js
       working-directory: dist
+      env:
+        NPM_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
 
     - name: Upload Lambda function asset to release
       uses: actions/upload-release-asset@v1
