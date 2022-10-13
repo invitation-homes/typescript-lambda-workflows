@@ -7,6 +7,10 @@ on:
         required: true
         description: 'AWS environment'
         type: string
+      function-domain:
+        required: true
+        description: 'The domain of the Lambda functions that will be used in the S3 bucket key (e.g., "CustomerService" or "CiCdAutomation")'
+        type: string
       tag:
         required: true
         description: 'The tag of the release to be deployed'
@@ -116,7 +120,7 @@ jobs:
     - name: Upload lambda functions to S3
       run: >
         aws s3 cp ${{ env.ARTIFACT_NAME }}
-        s3://${{ env.S3_BUCKET }}/CustomerService/${{ matrix.function }}/${{ env.ARTIFACT_NAME }}
+        s3://${{ env.S3_BUCKET }}/${{ inputs.function-domain }}/${{ matrix.function }}/${{ env.ARTIFACT_NAME }}
 
   apply-terraform-changes:
     name: Apply Terraform changes
