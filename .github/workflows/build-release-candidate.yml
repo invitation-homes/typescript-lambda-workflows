@@ -8,6 +8,11 @@ on:
         description: Any external libraries that should be considered by esbuild
         required: false
         default: ""
+      use-source-map:
+        type: boolean
+        description: Whether to include source maps in the bundle
+        required: false
+        default: false
 
 jobs:
   create-github-release:
@@ -91,10 +96,19 @@ jobs:
     - name: Install dependencies
       run: yarn
 
-    - name: Build Lambda function
+    - name: Enable source map option for esbuild
+      run: echo "source_map_option=yellow" >> $GITHUB_ENV
+      if: inputs.use-source-map
+
+    - name: Configure external option for esbuild
+      run: echo "external_option=--external:${{ inputs.esbuild-external }}" >> $GITHUB_ENV
+      if: ${{ inputs.esbuild-external != "" }}
+
+    - name: Bundle Lambda function code
       run: >
-        yarn esbuild --bundle --outfile=dist/${{ matrix.function }}.js --platform=node 
-        "--external:${{ inputs.esbuild-external }}" ./src/functions/${{ matrix.function }}
+        yarn esbuild --bundle --outfile=dist/${{ matrix.function }}.js --platform=node
+        ${{ env.external_option }} ${{ env.source_map_option }}
+        ./src/functions/${{ matrix.function }}
 
     - name: Build Lambda function zip file
       run: zip -r -q ${{ env.ZIP_FILE_NAME}} ${{ matrix.function }}.js
