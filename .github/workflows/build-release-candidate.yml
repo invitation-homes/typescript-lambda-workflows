@@ -97,7 +97,7 @@ jobs:
       run: yarn
 
     - name: Enable source map option for esbuild
-      run: echo "source_map_option=yellow" >> $GITHUB_ENV
+      run: echo "source_map_option=--sourcemap=inline" >> $GITHUB_ENV
       if: inputs.use-source-map
 
     - name: Configure external option for esbuild
