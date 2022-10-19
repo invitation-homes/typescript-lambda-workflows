@@ -102,7 +102,7 @@ jobs:
 
     - name: Configure external option for esbuild
       run: echo "external_option=--external:${{ inputs.esbuild-external }}" >> $GITHUB_ENV
-      if: ${{ inputs.esbuild-external != "" }}
+      if: ${{ inputs.esbuild-external != '' }}
 
     - name: Bundle Lambda function code
       run: >
