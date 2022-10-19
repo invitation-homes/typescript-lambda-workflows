@@ -32,7 +32,7 @@ jobs:
     secrets: inherit
 ```
 
-This workflow accepts an optional `esbuild-external` input variable. This is passed to the esbuild process as the value for the `external` CLI option. See the [esbuild documentation](https://esbuild.github.io/api/#external) for more details.
+This workflow accepts two optional input variables. The first is `esbuild-external`, which is passed to the esbuild process as the value for the `external` CLI option. See the [esbuild documentation](https://esbuild.github.io/api/#external) for more details.
 
 ```yaml
 jobs:
@@ -41,6 +41,17 @@ jobs:
     uses: invitation-homes/typescript-lambda-workflows/.github/workflows/build-release-candidate.yml@v1
     with:
       esbuild-external: pg-native
+```
+
+The second input variable is `use-source-map`. The default value is `false`. When this is set to `true`, the Lambda function's code will be bundled with source maps. To take advantage of this, Lambda functions must also have the environment variable `NODE_OPTIONS=--enable-source-maps`. See the [esbuild documentation](https://esbuild.github.io/api/#sourcemap) and [this blog post](https://serverless.pub/aws-lambda-node-sourcemaps/) for more details.
+
+```yaml
+jobs:
+  build-release-candidate:
+    name: Build release candidate
+    uses: invitation-homes/typescript-lambda-workflows/.github/workflows/build-release-candidate.yml@v1
+    with:
+      use-source-map: true
 ```
 
 ## Deploy Application Workflow
