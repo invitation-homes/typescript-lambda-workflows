@@ -147,7 +147,7 @@ jobs:
       uses: hashicorp/setup-terraform@v2
       with:
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-        terraform_version: ${{ inouts.terraform-version }}
+        terraform_version: ${{ inputs.terraform-version }}
 
     - name: Configure Terraform environment
       run: mkdir .terraform && echo "${{ inputs.environment }}-us-east-1-aws" > .terraform/environment
