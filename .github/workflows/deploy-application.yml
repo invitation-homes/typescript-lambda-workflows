@@ -15,6 +15,11 @@ on:
         required: true
         description: 'The tag of the release to be deployed'
         type: string
+      terraform-version:
+        required: false
+        description: 'The Terraform version to install'
+        type: string
+        default: ~1.2.0
 
 env:
   BASE_API_URL: https://api.github.com/repos/${{ github.repository }}/releases
@@ -142,7 +147,7 @@ jobs:
       uses: hashicorp/setup-terraform@v2
       with:
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-        terraform_version: ~1.2.0
+        terraform_version: ${{ inouts.terraform-version }}
 
     - name: Configure Terraform environment
       run: mkdir .terraform && echo "${{ inputs.environment }}-us-east-1-aws" > .terraform/environment
